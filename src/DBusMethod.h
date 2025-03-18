@@ -50,8 +50,10 @@ struct DBusMethod
     DBusMethod(const DBusInterface *pOwner, const std::string &name, const char *pInArgs[], const char *pOutArgs, Callback callback);
 
     DBusMethod(const DBusInterface *pOwner, const std::string &name, const char *pInArgs[], const char *pOutArgs, Callback callback, bool _needAuth)
-        : DBusMethod(pOwner, name, pInArgs, pOutArgs, callback), needAuth(_needAuth)
-    { }
+        : DBusMethod(pOwner, name, pInArgs, pOutArgs, callback)
+    {
+        needAuth = _needAuth;
+    }
 
     //
     // Accessors
