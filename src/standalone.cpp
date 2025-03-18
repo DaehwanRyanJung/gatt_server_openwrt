@@ -96,25 +96,26 @@
 #include <iostream>
 #include <thread>
 #include <sstream>
+#include <unistd.h>
 
 #include "../include/Gobbledegook.h"
+#include "NtcLogger.h"
+#include "NtcUci.h"
+#include "NtcDbus.h"
 
 //
 // Constants
 //
 
+#define GATT_SHORT_ADV_NAME_LEN 10 // Length of short advertising name
+#define PAIRING_GRACE_TIME  600  // When bonding window is open, how many seconds to allow unpaired connections (waiting for user to click "Paired")
+#define BONDING_WINDOW_TIME 600 // How long after startup to keep bonding window open - production value should be 600 seconds
+
+#define MIN_BONDING_WINDOW_TIME 100
+#define MAX_BONDING_WINDOW_TIME 86400
+
 // Maximum time to wait for any single async process to timeout during initialization
 static const int kMaxAsyncInitTimeoutMS = 30 * 1000;
-
-//
-// Server data values
-//
-
-// The battery level ("battery/level") reported by the server (see Server.cpp)
-static uint8_t serverDataBatteryLevel = 78;
-
-// The text string ("text/string") used by our custom text string service (see Server.cpp)
-static std::string serverDataTextString = "Hello, world!";
 
 //
 // Logging
@@ -175,24 +176,7 @@ void signalHandler(int signum)
 // sending over stored values, so we don't need to take any additional steps to ensure thread-safety.
 const void *dataGetter(const char *pName)
 {
-    if (nullptr == pName)
-    {
-        LogError("NULL name sent to server data getter");
-        return nullptr;
-    }
-
-    std::string strName = pName;
-
-    if (strName == "battery/level")
-    {
-        return &serverDataBatteryLevel;
-    }
-    else if (strName == "text/string")
-    {
-        return serverDataTextString.c_str();
-    }
-
-    LogWarn((std::string("Unknown name for server data getter request: '") + pName + "'").c_str());
+    (void) pName; //UNUSED
     return nullptr;
 }
 
@@ -204,34 +188,8 @@ const void *dataGetter(const char *pName)
 // sending over stored values, so we don't need to take any additional steps to ensure thread-safety.
 int dataSetter(const char *pName, const void *pData)
 {
-    if (nullptr == pName)
-    {
-        LogError("NULL name sent to server data setter");
-        return 0;
-    }
-    if (nullptr == pData)
-    {
-        LogError("NULL pData sent to server data setter");
-        return 0;
-    }
-
-    std::string strName = pName;
-
-    if (strName == "battery/level")
-    {
-        serverDataBatteryLevel = *static_cast<const uint8_t *>(pData);
-        LogDebug((std::string("Server data: battery level set to ") + std::to_string(serverDataBatteryLevel)).c_str());
-        return 1;
-    }
-    else if (strName == "text/string")
-    {
-        serverDataTextString = static_cast<const char *>(pData);
-        LogDebug((std::string("Server data: text string set to '") + serverDataTextString + "'").c_str());
-        return 1;
-    }
-
-    LogWarn((std::string("Unknown name for server data setter request: '") + pName + "'").c_str());
-
+    (void) pName; //UNUSED
+    (void) pData; //UNUSED
     return 0;
 }
 
@@ -241,28 +199,58 @@ int dataSetter(const char *pName, const void *pData)
 
 int main(int argc, char **ppArgv)
 {
-    // A basic command-line parser
-    for (int i = 1; i < argc; ++i)
-    {
-        std::string arg = ppArgv[i];
-        if (arg == "-q")
-        {
-            logLevel = ErrorsOnly;
-        }
-        else if (arg == "-v")
-        {
-            logLevel = Verbose;
-        }
-        else if  (arg == "-d")
-        {
-            logLevel = Debug;
-        }
-        else
-        {
-            LogFatal((std::string("Unknown parameter: '") + arg + "'").c_str());
-            LogFatal("");
-            LogFatal("Usage: standalone [-q | -v | -d]");
-            return -1;
+    int optc;
+    int syslogLevel = LOG_ERR;
+    bool isBondable = true;
+
+    std::chrono::steady_clock::time_point now, timeoutBondingWindow, timeoutGraceTime;
+    unsigned int bondingWindowDur;
+
+    uci::UciHandle uciHdl;
+    fw::NtcDbus dbusHdl;
+
+    while (((optc = getopt(argc, ppArgv, "gvdng:l:"))) != -1) {
+        switch(optc) {
+            case 'q':
+                logLevel = ErrorsOnly;
+                break;
+            case 'v':
+                logLevel = Verbose;
+                break;
+            case 'd':
+                logLevel = Debug;
+                break;
+
+            case 'n':
+                LogWarn("Disabling Pairing timeout");
+                fw::niceMode = true;
+                break;
+
+            case 'l': // syslog level
+                /* LOG_ERR(0), LOG_WARNING(1), LOG_NOTICE(2), LOG_INFO(3), LOG_DEBUG(4) */
+                try {
+                    syslogLevel = std::stoi(optarg);
+                    if (syslogLevel < 0) {
+                        syslogLevel = 0;
+                    } else if (syslogLevel > 4) {
+                        syslogLevel = 4;
+                    }
+                }
+                catch(std::exception &ex){
+                    syslogLevel = 0;
+                }
+                syslogLevel += LOG_ERR;
+                break;
+
+            default:
+                LogFatal("");
+                LogFatal("Usage: ggk-standalone [-q | -v | -d | -n | -l level]");
+                LogFatal("\t-q: Error only log level");
+                LogFatal("\t-v: Verbose log level");
+                LogFatal("\t-d: Debug log level");
+                LogFatal("\t-n: Disable Pairing timeout");
+                LogFatal("\t-l level: Set syslog verbosity[0-4]");
+                return -1;
         }
     }
 
@@ -280,6 +268,24 @@ int main(int argc, char **ppArgv)
     ggkLogRegisterAlways(LogAlways);
     ggkLogRegisterTrace(LogTrace);
 
+    fw::Logger::getInstance().setup(LOG_INFO);
+
+    const char *advName;
+    std::string uciAdvName = uciHdl.get({"gattserver", "config", "adv_name"}).toStdString();
+
+    if (uciAdvName.empty()) {
+        advName = "Aurus-XXXX";
+    } else {
+        uciAdvName.resize(GATT_SHORT_ADV_NAME_LEN);
+        advName = uciAdvName.data();
+    }
+
+    bondingWindowDur = uciHdl.get({"gattserver", "config", "bonding_window_dur"}).toInt<unsigned int>(BONDING_WINDOW_TIME);
+    if (bondingWindowDur < MIN_BONDING_WINDOW_TIME)
+        bondingWindowDur = MIN_BONDING_WINDOW_TIME;
+    if (bondingWindowDur > MAX_BONDING_WINDOW_TIME)
+        bondingWindowDur = MAX_BONDING_WINDOW_TIME;
+
     // Start the server's ascync processing
     //
     // This starts the server on a thread and begins the initialization process
@@ -289,20 +295,86 @@ int main(int argc, char **ppArgv)
     //     This first parameter (the service name) must match tha name configured in the D-Bus permissions. See the Readme.md file
     //     for more information.
     //
-    if (!ggkStart("gobbledegook", "Gobbledegook", "Gobbledegook", dataGetter, dataSetter, kMaxAsyncInitTimeoutMS))
+    if (!ggkStart("gobbledegook", advName, advName, dataGetter, dataSetter, kMaxAsyncInitTimeoutMS))
     {
         return -1;
     }
 
+    now = std::chrono::steady_clock::now();
+    timeoutBondingWindow = now + std::chrono::seconds(bondingWindowDur);
+    timeoutGraceTime = now + std::chrono::seconds(PAIRING_GRACE_TIME);
+
+#ifdef V_GATT_SERVER_AUTH_y
+    log(LOG_ERR, "BLE Authentication is enabled");
+#else
+    log(LOG_ERR, "BLE Authentication is disabled");
+#endif
+
     // Wait for the server to start the shutdown process
-    //
-    // While we wait, every 15 ticks, drop the battery level by one percent until we reach 0
     while (ggkGetServerRunState() < EStopping)
     {
-        std::this_thread::sleep_for(std::chrono::seconds(15));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        serverDataBatteryLevel = std::max(serverDataBatteryLevel - 1, 0);
-        ggkNofifyUpdatedCharacteristic("/com/gobbledegook/battery/level");
+        // This is a check to prevent accidental/nuisance connections from tying up the peripheral.
+        if (!fw::niceMode) ggkCheckDasBoot();
+
+        now = std::chrono::steady_clock::now();
+
+        if (now < timeoutBondingWindow)
+        {
+            if (!isBondable) {
+                log(LOG_NOTICE, "Enable BT Connectable/Bonding");
+                ggkSetBonding(true);
+                ggkSetConnectable(true);
+                ggkSetDiscoverable(true);
+                ggkSetAdvertising(true);
+                isBondable = true;
+            }
+            if (!ggkGetActiveConnections())
+            {
+                timeoutGraceTime = now + std::chrono::seconds(PAIRING_GRACE_TIME);
+                LogInfo("No active connections, bonding open, resetting grace timer");
+            }
+        }
+        else
+        {
+            if (isBondable) {
+                log(LOG_ERR, "BONDING_WINDOW_TIMER(%d seconds) expired, device binding is not allowed.", bondingWindowDur);
+                log(LOG_NOTICE, "Disable BT Connectable/Bonding");
+                ggkSetAdvertising(false);
+                ggkSetDiscoverable(false);
+                ggkSetConnectable(false); // Disable connectable. Otherwise, a peer keeps retrying to connect a GATT server.
+                ggkSetBonding(false); // good idea to keep disabling it, in case someone else fiddles with the knob
+                isBondable = false;
+            }
+            // Bonding Window is expired, so any unpaired connections should be disconnected, if exist.
+            timeoutGraceTime = now;
+        }
+
+        // A case that a peer is connected but not paired, yet.
+        if (!fw::niceMode && dbusHdl.checkConnectionsForPairing(false))
+        {
+            if (!ggkGetActiveConnections())
+            {
+                LogWarn("unpaired connection detected but no connections..  this is weird, power cycle time!");
+                ggkSetDasBootFlag();
+            }
+            if (now >= timeoutGraceTime)
+            {
+                if (now < timeoutBondingWindow) {
+                    log(LOG_ERR, "PAIRING_GRACE_TIMER(%d seconds) expired, terminated a session.", PAIRING_GRACE_TIME);
+                } else {
+                    log(LOG_ERR, "BONDING_WINDOW_TIMER(%d seconds) expired, connection request is refused.", bondingWindowDur);
+                }
+                ggkSetDasBootFlag();
+            }
+        }
+        else
+        {
+            timeoutGraceTime = now + std::chrono::seconds(PAIRING_GRACE_TIME);
+        }
+
+        uciHdl.pollSubscription();
     }
 
     // Wait for the server to come to a complete stop (CTRL-C from the command line)

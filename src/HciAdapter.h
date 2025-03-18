@@ -34,11 +34,16 @@
 #include "Utils.h"
 #include "Logger.h"
 
+#include "NtcUtils.h"
+
 namespace ggk {
 
 class HciAdapter
 {
 public:
+
+    // Signal from HciAdapter Event Thread that user has had Auth Failed event
+    bool dasBoot;
 
     //
     // Constants
@@ -249,6 +254,19 @@ public:
             }
             return text;
         }
+
+        std::string simplifiedDebugText()
+        {
+            std::string text = "";
+            fw::utils::DefValueMap<int, std::string> enumAddrType = {
+                {0, "BR/EDR"},
+                {1, "LE Public"},
+                {2, "LE Random"}
+            };
+            text += "> DeviceConnected event: Address [" + Utils::bluetoothAddressString(address) + "], AddrType [" + enumAddrType.get(addressType, "") + "]";
+            return text;
+        }
+
     } __attribute__((packed));
 
     struct DeviceDisconnectedEvent
@@ -287,6 +305,29 @@ public:
             text += "  + Address            : " + Utils::bluetoothAddressString(address) + "\n";
             text += "  + Address type       : " + Utils::hex(addressType) + "\n";
             text += "  + Reason             : " + Utils::hex(reason);
+            return text;
+        }
+
+        std::string simplifiedDebugText()
+        {
+            // enumAddrType and enumReason are based on bluez.
+            // mgmt_address_type_table and mgmt_device_disconnected_evt()
+            fw::utils::DefValueMap<int, std::string> enumAddrType = {
+                {0, "BR/EDR"},
+                {1, "LE Public"},
+                {2, "LE Random"}
+            };
+            fw::utils::DefValueMap<int, std::string> enumReason = {
+                {0, "Unspecified"},
+                {1, "Connection timeout"},
+                {2, "Terminated by local host"},
+                {3, "Terminated by remote host"},
+                {4, "Terminated due to authentication failure"}
+            };
+            std::string text = "";
+            text += "> DeviceDisconnected event: Address ["+ Utils::bluetoothAddressString(address)
+                    + "], AddrType [" + enumAddrType.get(addressType, "")
+                    + "], Reason [" + enumReason.get(reason, "Reserved") + "]";
             return text;
         }
     } __attribute__((packed));

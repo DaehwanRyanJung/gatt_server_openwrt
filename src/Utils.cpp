@@ -426,4 +426,14 @@ std::string Utils::stringFromGVariantByteArray(const GVariant *pVariant)
     return array.data();
 }
 
+// Extracts a binary vector(std::vector<unsigned char>) from an array of bytes ("ay")
+BinaryVec Utils::binaryVecFromGVariantByteArray(const GVariant *pVariant)
+{
+    gsize size;
+    gconstpointer pPtr = g_variant_get_fixed_array(const_cast<GVariant *>(pVariant), &size, sizeof(unsigned char));
+    BinaryVec array(size, 0);
+    memcpy(array.data(), pPtr, size);
+    return array;
+}
+
 }; // namespace ggk

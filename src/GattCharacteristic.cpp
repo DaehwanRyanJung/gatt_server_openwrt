@@ -54,6 +54,19 @@ GattService &GattCharacteristic::gattCharacteristicEnd()
     return service;
 }
 
+//
+// D-Bus interface methods
+//
+
+// Add a named method to this interface
+//
+// This method returns a reference to `this` in order to enable chaining inside the server description.
+GattCharacteristic &GattCharacteristic::addMethod(const std::string &name, const char *pInArgs[], const char *pOutArgs, DBusMethod::Callback callback, bool needAuth)
+{
+    methods.push_back(DBusMethod(this, name, pInArgs, pOutArgs, callback, needAuth));
+    return *this;
+}
+
 // Locates a D-Bus method within this D-Bus interface and invokes the method
 bool GattCharacteristic::callMethod(const std::string &methodName, GDBusConnection *pConnection, GVariant *pParameters, GDBusMethodInvocation *pInvocation, gpointer pUserData) const
 {
@@ -61,6 +74,12 @@ bool GattCharacteristic::callMethod(const std::string &methodName, GDBusConnecti
     {
         if (methodName == method.getName())
         {
+#ifdef V_GATT_SERVER_AUTH_y
+            if (method.getNeedAuth() == true && !ggkGetServerAuthState()) {
+                g_dbus_method_invocation_return_error(pInvocation, G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED, "Auth Fail");
+                return true;
+            }
+#endif
             method.call<GattCharacteristic>(pConnection, getPath(), getName(), methodName, pParameters, pInvocation, pUserData);
             return true;
         }
@@ -94,15 +113,17 @@ void GattCharacteristic::tickEvents(GDBusConnection *pConnection, void *pUserDat
 //
 // Defined as: array{byte} ReadValue(dict options)
 //
+// needAuth: need Authentication to access callback (default: true)
+//
 // D-Bus breakdown:
 //
 //     Input args:  options - "a{sv}"
 //     Output args: value   - "ay"
-GattCharacteristic &GattCharacteristic::onReadValue(MethodCallback callback)
+GattCharacteristic &GattCharacteristic::onReadValue(MethodCallback callback, bool needAuth /*=true*/)
 {
     // array{byte} ReadValue(dict options)
     static const char *inArgs[] = {"a{sv}", nullptr};
-    addMethod("ReadValue", inArgs, "ay", reinterpret_cast<DBusMethod::Callback>(callback));
+    addMethod("ReadValue", inArgs, "ay", reinterpret_cast<DBusMethod::Callback>(callback), needAuth);
     return *this;
 }
 
@@ -110,15 +131,17 @@ GattCharacteristic &GattCharacteristic::onReadValue(MethodCallback callback)
 //
 // Defined as: void WriteValue(array{byte} value, dict options)
 //
+// needAuth: need Authentication to access callback (default: true)
+//
 // D-Bus breakdown:
 //
 //     Input args:  value   - "ay"
 //                  options - "a{sv}"
 //     Output args: void
-GattCharacteristic &GattCharacteristic::onWriteValue(MethodCallback callback)
+GattCharacteristic &GattCharacteristic::onWriteValue(MethodCallback callback, bool needAuth /*=true*/)
 {
     static const char *inArgs[] = {"ay", "a{sv}", nullptr};
-    addMethod("WriteValue", inArgs, nullptr, reinterpret_cast<DBusMethod::Callback>(callback));
+    addMethod("WriteValue", inArgs, nullptr, reinterpret_cast<DBusMethod::Callback>(callback), needAuth);
     return *this;
 }
 
@@ -164,6 +187,40 @@ bool GattCharacteristic::callOnUpdatedValue(GDBusConnection *pConnection, void *
 
     Logger::debug(SSTR << "Calling OnUpdatedValue function for interface at path '" << getPath() << "'");
     return pOnUpdatedValueFunc(*this, pConnection, pUserData);
+}
+
+// Specialized support for StartNotify method
+//
+// Defined as: void StartNotify()
+//
+// needAuth: need Authentication to access callback (default: true)
+//
+// D-Bus breakdown:
+//
+//     Input args: void
+//     Output args: void
+GattCharacteristic &GattCharacteristic::onStartNotify(MethodCallback callback, bool needAuth /*=true*/)
+{
+    static const char *inArgs[] = {nullptr};
+    addMethod("StartNotify", inArgs, nullptr, reinterpret_cast<DBusMethod::Callback>(callback), needAuth);
+    return *this;
+}
+
+// Specialized support for StopNotify method
+//
+// Defined as: void StopNotify()
+//
+// needAuth: need Authentication to access callback (default: true)
+//
+// D-Bus breakdown:
+//
+//     Input args: void
+//     Output args: void
+GattCharacteristic &GattCharacteristic::onStopNotify(MethodCallback callback, bool needAuth /*=true*/)
+{
+    static const char *inArgs[] = {nullptr};
+    addMethod("StopNotify", inArgs, nullptr, reinterpret_cast<DBusMethod::Callback>(callback), needAuth);
+    return *this;
 }
 
 // Convenience functions to add a GATT descriptor to the hierarchy

@@ -52,7 +52,12 @@
 #include "Mgmt.h"
 #include "Logger.h"
 
+#include "NtcDbus.h"
+#include "NtcLogger.h"
+
 namespace ggk {
+// Signal from HciAdapter Event Thread that user has had Auth Failed event
+bool dasBoot = false;
 
 // Our event thread listens for events coming from the adapter and deals with them appropriately
 std::thread HciAdapter::eventThread;
@@ -337,6 +342,7 @@ void HciAdapter::runEventThread()
                 DeviceConnectedEvent event(responsePacket);
                 activeConnections += 1;
                 Logger::debug(SSTR << "  > Connection count incremented to " << activeConnections);
+                log(LOG_ERR, event.simplifiedDebugText().c_str());
                 break;
             }
             // Command status event
@@ -345,6 +351,9 @@ void HciAdapter::runEventThread()
                 DeviceDisconnectedEvent event(responsePacket);
                 if (activeConnections > 0)
                 {
+#ifdef V_GATT_SERVER_AUTH_y
+                    ggkSetServerAuthState(false);
+#endif
                     activeConnections -= 1;
                     Logger::debug(SSTR << "  > Connection count decremented to " << activeConnections);
                 }
@@ -352,6 +361,25 @@ void HciAdapter::runEventThread()
                 {
                     Logger::debug(SSTR << "  > Connection count already at zero, ignoring non-connected disconnect event");
                 }
+                log(LOG_ERR, event.simplifiedDebugText().c_str());
+                break;
+            }
+            case Mgmt::EAuthenticationFailedEvent:
+            {
+                log(LOG_ERR, "Auth failed - user not paired");
+                if (!fw::niceMode)
+                {
+                    fw::NtcDbus().checkConnectionsForPairing(true);
+                }
+                break;
+            }
+            case Mgmt::ENewLinkKeyEvent:
+            case Mgmt::ENewLongTermKeyEvent:
+            case Mgmt::ENewIdentityResolvingKeyEvent:
+            case Mgmt::ENewSignatureResolvingKeyEvent:
+            {
+                // Pairing/Bondind related events
+                log(LOG_ERR, "Response event type: 0x%04X (%s)", eventCode, kEventTypeNames[eventCode]);
                 break;
             }
             // Unsupported

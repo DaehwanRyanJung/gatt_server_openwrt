@@ -49,6 +49,10 @@ struct DBusMethod
     // Instantiate a named method on a given interface (pOwner) with a given set of arguments and a callback delegate
     DBusMethod(const DBusInterface *pOwner, const std::string &name, const char *pInArgs[], const char *pOutArgs, Callback callback);
 
+    DBusMethod(const DBusInterface *pOwner, const std::string &name, const char *pInArgs[], const char *pOutArgs, Callback callback, bool _needAuth)
+        : DBusMethod(pOwner, name, pInArgs, pOutArgs, callback), needAuth(_needAuth)
+    { }
+
     //
     // Accessors
     //
@@ -76,6 +80,9 @@ struct DBusMethod
         this->outArgs = outArgs;
         return *this;
     }
+
+    // Returns the authentication necessity of the method
+    bool getNeedAuth() const { return needAuth; }
 
     //
     // Call the method
@@ -108,6 +115,7 @@ private:
     std::vector<std::string> inArgs;
     std::string outArgs;
     Callback callback;
+    bool needAuth;
 };
 
 }; // namespace ggk

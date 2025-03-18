@@ -39,6 +39,7 @@
 #include "DBusObjectPath.h"
 
 namespace ggk {
+typedef std::vector<unsigned char> BinaryVec;
 
 struct Utils
 {
@@ -201,6 +202,9 @@ struct Utils
 
     // Convert a 32-bit value from host format to HCI format
     static uint32_t endianToHci(uint32_t value) {return htole32(value);}
+
+    // Extracts a binary vector(std::vector<unsigned char>) from an array of bytes ("ay")
+    static BinaryVec binaryVecFromGVariantByteArray(const GVariant *pVariant);
 };
 
 }; // namespace ggk

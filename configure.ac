@@ -6,6 +6,7 @@ AC_CHECK_LIB([pthread], pthread_create, [], [AC_MSG_ERROR([pthread library not f
 AC_CHECK_LIB([glib-2.0], g_variant_new, [], [AC_MSG_ERROR([glib-2.0 library not found])])
 AC_CHECK_LIB([gio-2.0], g_dbus_method_invocation_return_dbus_error, [], [AC_MSG_ERROR([gio-2.0 library not found])])
 AC_CHECK_LIB([gobject-2.0], g_object_unref, [], [AC_MSG_ERROR([gobject-2.0 library not found])])
+AC_CHECK_LIB([dbus-1], dbus_error_init, [], [AC_MSG_ERROR([dbus-1 library not found])])
 AX_CXX_COMPILE_STDCXX(11)
 AC_PROG_RANLIB
 AC_PROG_CXX
@@ -14,6 +15,7 @@ AM_PROG_AR
 AC_SUBST(GLIB_CFLAGS)
 AC_SUBST(GIO_CFLAGS)
 AC_SUBST(GOBJECT_CFLAGS)
+AC_SUBST(DBUS_CFLAGS)
 
 if pkg-config --atleast-version=2.00 glib-2.0; then
    GLIB_CFLAGS=`pkg-config --cflags glib-2.0`
@@ -31,6 +33,12 @@ if pkg-config --atleast-version=2.00 gobject-2.0; then
    GOBJECT_CFLAGS=`pkg-config --cflags gobject-2.0`
 else
    AC_MSG_ERROR(gobject-2.0 not found)
+fi
+
+if pkg-config --atleast-version=1.0 dbus-1; then
+   GLIB_CFLAGS=`pkg-config --cflags dbus-1`
+else
+   AC_MSG_ERROR(dbus-1 not found)
 fi
 
 AC_CONFIG_HEADERS([config.h])

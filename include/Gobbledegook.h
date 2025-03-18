@@ -298,6 +298,29 @@ extern "C"
     // Convert a `GGKServerHealth` into a human-readable string
     const char *ggkGetServerHealthString(enum GGKServerHealth state);
 
+    int ggkGetActiveConnections(void);
+
+    void ggkCheckDasBoot(void);
+
+    void ggkSetDasBootFlag(void);
+
+    void ggkSetBonding(bool state);
+
+    void ggkSetConnectable(bool state);
+
+    void ggkGetConnections(void);
+
+    void ggkSetAdvertising(bool state);
+
+    void ggkSetDiscoverable(bool state);
+
+#ifdef V_GATT_SERVER_AUTH_y
+    bool ggkGetServerAuthBypass(void);
+    void ggkSetServerAuthBypass(bool state);
+    bool ggkGetServerAuthState(void);
+    void ggkSetServerAuthState(bool state);
+#endif
+
 #ifdef __cplusplus
 }
 #endif //__cplusplus

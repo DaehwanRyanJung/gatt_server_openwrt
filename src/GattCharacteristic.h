@@ -102,6 +102,8 @@ struct GattCharacteristic : GattInterface
     // This method compliments `GattService::gattCharacteristicBegin()`
     GattService &gattCharacteristicEnd();
 
+    GattCharacteristic &addMethod(const std::string &name, const char *pInArgs[], const char *pOutArgs, DBusMethod::Callback callback, bool needAuth);
+
     // Locates a D-Bus method within this D-Bus interface and invokes the method
     virtual bool callMethod(const std::string &methodName, GDBusConnection *pConnection, GVariant *pParameters, GDBusMethodInvocation *pInvocation, gpointer pUserData) const;
 
@@ -120,22 +122,26 @@ struct GattCharacteristic : GattInterface
     //
     // Defined as: array{byte} ReadValue(dict options)
     //
+    // needAuth: need Authentication to access callback (default: true)
+    //
     // D-Bus breakdown:
     //
     //     Input args:  options - "a{sv}"
     //     Output args: value   - "ay"
-    GattCharacteristic &onReadValue(MethodCallback callback);
+    GattCharacteristic &onReadValue(MethodCallback callback, bool needAuth = true);
 
     // Specialized support for Characteristic WriteValue method
     //
     // Defined as: void WriteValue(array{byte} value, dict options)
+    //
+    // needAuth: need Authentication to access callback (default: true)
     //
     // D-Bus breakdown:
     //
     //     Input args:  value   - "ay"
     //                  options - "a{sv}"
     //     Output args: void
-    GattCharacteristic &onWriteValue(MethodCallback callback);
+    GattCharacteristic &onWriteValue(MethodCallback callback, bool needAuth = true);
 
     // Custom support for handling updates to our characteristic's value
     //
@@ -167,6 +173,30 @@ struct GattCharacteristic : GattInterface
     //          self.callOnUpdatedValue(pConnection, pUserData);
     //      })
     bool callOnUpdatedValue(GDBusConnection *pConnection, void *pUserData) const;
+
+    // Specialized support for StartNotify method
+    //
+    // Defined as: void StartNotify()
+    //
+    // needAuth: need Authentication to access callback (default: true)
+    //
+    // D-Bus breakdown:
+    //
+    //     Input args: void
+    //     Output args: void
+    GattCharacteristic &onStartNotify(MethodCallback callback, bool needAuth = true);
+
+    // Specialized support for StopNotify method
+    //
+    // Defined as: void StopNotify()
+    //
+    // needAuth: need Authentication to access callback (default: true)
+    //
+    // D-Bus breakdown:
+    //
+    //     Input args: void
+    //     Output args: void
+    GattCharacteristic &onStopNotify(MethodCallback callback, bool needAuth = true);
 
     // Convenience functions to add a GATT descriptor to the hierarchy
     //

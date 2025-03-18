@@ -33,7 +33,7 @@ namespace ggk {
 
 // Instantiate a named method on a given interface (pOwner) with a given set of arguments and a callback delegate
 DBusMethod::DBusMethod(const DBusInterface *pOwner, const std::string &name, const char *pInArgs[], const char *pOutArgs, Callback callback)
-: pOwner(pOwner), name(name), callback(callback)
+: pOwner(pOwner), name(name), callback(callback), needAuth(false)
 {
     const char **ppInArg = pInArgs;
     while(*ppInArg)

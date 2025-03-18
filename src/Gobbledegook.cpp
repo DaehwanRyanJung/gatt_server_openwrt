@@ -44,6 +44,9 @@
 #include "Init.h"
 #include "Logger.h"
 #include "Server.h"
+#include "HciAdapter.h"
+
+#include "Mgmt.h"
 
 namespace ggk
 {
@@ -82,6 +85,12 @@ namespace ggk
         Logger::status(SSTR << "** SERVER HEALTH CHANGED: " << ggkGetServerHealthString(serverHealth) << " -> " << ggkGetServerHealthString(newHealth));
         serverHealth = newHealth;
     }
+
+#ifdef V_GATT_SERVER_AUTH_y
+    volatile bool serveAuthState = false;
+    volatile bool serveAuthBypass = false;
+#endif
+
 }; // namespace ggk
 
 using namespace ggk;
@@ -538,3 +547,104 @@ int ggkStart(const char *pServiceName, const char *pAdvertisingName, const char 
         return 0;
     }
 }
+
+int ggkGetActiveConnections(void)
+{
+    return HciAdapter::getInstance().getActiveConnectionCount();
+}
+
+// This is a check to prevent accidental/nuisance connections from tying up the peripheral.
+// If an unpaired user connects, the Event thread gets a AuthenticationFailedEvent and sets
+// the dasBoot flag
+void ggkCheckDasBoot(void)
+{
+    if (HciAdapter::getInstance().dasBoot)
+    {
+        Logger::warn("*** DAS BOOT!! ***");
+        HciAdapter::getInstance().dasBoot = false;
+
+        ggk::Mgmt mgmt;
+        Logger::warn("Powering off");
+        while (!mgmt.setPowered(false))
+        {
+            Logger::error("Error turning off the power!");
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        Logger::warn("Power back on");
+        if (!mgmt.setPowered(true))
+        {
+            Logger::error("Error turning on the power!");
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+}
+
+void ggkSetDasBootFlag(void)
+{
+    HciAdapter::getInstance().dasBoot = true;
+}
+
+// This lets the main routine control bonding flag
+void ggkSetBonding(bool state)
+{
+    if (state) Logger::debug("Setting bonding state on");
+    else Logger::debug("Setting bonding state off");
+    ggk::Mgmt mgmt;
+    if (!mgmt.setBondable(state))
+    {
+        Logger::error("Error setting bonding flag!");
+        ggkTriggerShutdown();
+    }
+}
+
+void ggkSetConnectable(bool state)
+{
+    ggk::Mgmt mgmt;
+    if (!mgmt.setConnectable(state))
+    {
+        Logger::error("Error setting connectable flag!");
+        ggkTriggerShutdown();
+    }
+}
+
+void ggkSetAdvertising(bool state)
+{
+    ggk::Mgmt mgmt;
+    uint8_t newState = state ? 1 : 0;
+    if (!mgmt.setAdvertising(newState))
+    {
+        Logger::error("Error setting advertising flag!");
+        ggkTriggerShutdown();
+    }
+}
+
+void ggkSetDiscoverable(bool state)
+{
+    ggk::Mgmt mgmt;
+    uint8_t newState = state ? 1 : 0;
+    if (!mgmt.setDiscoverable(newState, 0))
+    {
+        Logger::error("Error setting discoverable flag!");
+        ggkTriggerShutdown();
+    }
+}
+
+#ifdef V_GATT_SERVER_AUTH_y
+bool ggkGetServerAuthBypass(void)
+{
+    return serveAuthBypass;
+}
+void ggkSetServerAuthBypass(bool state)
+{
+    serveAuthBypass = state;
+}
+bool ggkGetServerAuthState(void)
+{
+    return serveAuthState || serveAuthBypass;
+}
+void ggkSetServerAuthState(bool state)
+{
+    serveAuthState = state;
+}
+#endif

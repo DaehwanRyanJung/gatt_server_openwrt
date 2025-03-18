@@ -237,6 +237,9 @@ private:
     // This is used to build the path for our Bluetooth services (and we'll go ahead and use it as the owned name as well for
     // consistency.)
     std::string serviceName;
+
+    // register customised GATT services and Characteristics.
+    void registerServicePlugins();
 };
 
 // Our one and only server. It's a global.
